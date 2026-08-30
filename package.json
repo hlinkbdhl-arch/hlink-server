@@ -1,15 +1,16 @@
 {
   "name": "hlink-server",
   "version": "1.0.0",
-  "description": "WhatsApp bulk sender backend with Green-API",
+  "description": "Free Unlimited WhatsApp Marketing Engine",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "axios": "^1.7.9",
+    "@whiskeysockets/baileys": "^6.6.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "form-data": "^4.0.1"
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4"
   }
 }
