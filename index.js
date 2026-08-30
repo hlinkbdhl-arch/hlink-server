@@ -18,12 +18,8 @@ app.use(express.urlencoded({ limit: '100mb', extended: true }));
 let sock = null;
 let currentQR = null;
 let isConnected = false;
-let isInitializing = false;
 
 async function startWhatsApp() {
-  if (isInitializing) return;
-  isInitializing = true;
-
   try {
     const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_session');
     const { version } = await fetchLatestBaileysVersion();
@@ -34,8 +30,10 @@ async function startWhatsApp() {
       logger: pino({ level: 'silent' }),
       printQRInTerminal: false,
       browser: ['Mac OS', 'Chrome', '124.0.6367.207'],
-      generateHighQualityLinkPreview: true,
-      syncFullHistory: false
+      syncFullHistory: false,
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 0,
+      keepAliveIntervalMs: 15000
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -46,15 +44,12 @@ async function startWhatsApp() {
       if (qr) {
         currentQR = await QRCode.toDataURL(qr);
         isConnected = false;
-        console.log('🔄 Fresh QR Code Generated');
       }
 
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
         isConnected = false;
-        isInitializing = false;
-        console.log(`Connection closed (Code: ${statusCode}). Reconnecting: ${shouldReconnect}`);
         
         if (shouldReconnect) {
           setTimeout(startWhatsApp, 3000);
@@ -65,14 +60,12 @@ async function startWhatsApp() {
       } else if (connection === 'open') {
         isConnected = true;
         currentQR = null;
-        isInitializing = false;
-        console.log('🎉 WhatsApp Engine Connected & Active!');
+        console.log('✅ WhatsApp Logged In & Ready!');
       }
     });
   } catch (err) {
     console.error('Socket Boot Error:', err);
-    isInitializing = false;
-    setTimeout(startWhatsApp, 4000);
+    setTimeout(startWhatsApp, 5000);
   }
 }
 
@@ -86,18 +79,17 @@ app.get('/qr', (req, res) => {
 });
 
 app.get('/status', (req, res) => {
-  res.json({ connected: isConnected, message: 'Server is running' });
+  res.json({ connected: isConnected, message: 'Server Live' });
 });
 
-// ১০০% কার্যকর আনলিমিটেড বাল্ক মেসেজ ও ছবি সেন্ডিং রাউট
 app.post('/send-bulk', async (req, res) => {
   if (!isConnected || !sock) {
-    return res.status(500).json({ success: false, error: 'হোয়াটসঅ্যাপ সংযোগ বিচ্ছিন্ন! পুনরায় পেজ রিফ্রেশ করুন।' });
+    return res.status(500).json({ success: false, error: 'হোয়াটসঅ্যাপ কানেক্টেড নেই! আগে QR স্ক্যান করুন।' });
   }
 
   try {
     let { phone, message, images } = req.body;
-    if (!phone) return res.status(400).json({ success: false, error: 'ফোন নম্বর প্রদান করা হয়নি' });
+    if (!phone) return res.status(400).json({ success: false, error: 'ফোন নম্বর দেওয়া হয়নি' });
 
     phone = phone.replace(/[^0-9]/g, '');
     if (phone.length === 10 && phone.startsWith('1')) phone = '880' + phone;
@@ -106,7 +98,7 @@ app.post('/send-bulk', async (req, res) => {
 
     const jid = `${phone}@s.whatsapp.net`;
 
-    // ১. ছবি পাঠানোর নির্ভরযোগ্য প্রসেস
+    // ছবি থাকলে পাঠানো
     if (images && Array.isArray(images) && images.length > 0) {
       for (let i = 0; i < images.length; i++) {
         const base64Data = images[i].base64 || images[i];
@@ -123,23 +115,21 @@ app.post('/send-bulk', async (req, res) => {
         }
       }
 
-      // ছবির পরপরই সম্পূর্ণ বড় মেসেজ ডেলিভারি
+      // ছবির সাথে সম্পূর্ণ মেসেজ
       if (message && message.trim().length > 0) {
         await delay(1500);
         await sock.sendMessage(jid, { text: message });
       }
     } else if (message) {
-      // শুধু টেক্সট মেসেজ
       await sock.sendMessage(jid, { text: message });
     }
 
-    console.log(`✅ Successfully sent to: ${phone}`);
     res.json({ success: true, message: `Delivered to ${phone}` });
   } catch (err) {
-    console.error(`❌ Send Failed for ${req.body.phone}:`, err);
+    console.error(`Send Failed for ${req.body.phone}:`, err);
     res.status(500).json({ success: false, error: err.message || 'ডেলিভারি ব্যর্থ হয়েছে' });
   }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 Unlimited WhatsApp Server live on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));
