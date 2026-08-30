@@ -33,7 +33,7 @@ async function startWhatsApp() {
       syncFullHistory: false,
       connectTimeoutMs: 60000,
       defaultQueryTimeoutMs: 0,
-      keepAliveIntervalMs: 15000
+      keepAliveIntervalMs: 10000
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -44,12 +44,14 @@ async function startWhatsApp() {
       if (qr) {
         currentQR = await QRCode.toDataURL(qr);
         isConnected = false;
+        console.log('🔄 New QR Code Generated');
       }
 
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
         isConnected = false;
+        console.log(`Connection closed (Code: ${statusCode}). Reconnecting: ${shouldReconnect}`);
         
         if (shouldReconnect) {
           setTimeout(startWhatsApp, 3000);
@@ -60,7 +62,7 @@ async function startWhatsApp() {
       } else if (connection === 'open') {
         isConnected = true;
         currentQR = null;
-        console.log('✅ WhatsApp Logged In & Ready!');
+        console.log('🎉 WhatsApp Engine Linked & Live!');
       }
     });
   } catch (err) {
@@ -79,14 +81,11 @@ app.get('/qr', (req, res) => {
 });
 
 app.get('/status', (req, res) => {
-  res.json({ connected: isConnected, message: 'Server Live' });
+  res.json({ connected: isConnected, message: 'Server is running' });
 });
 
+// সরাসরি আনলিমিটেড বাল্ক মেসেজ ও ছবি সেন্ডিং রাউট
 app.post('/send-bulk', async (req, res) => {
-  if (!isConnected || !sock) {
-    return res.status(500).json({ success: false, error: 'হোয়াটসঅ্যাপ কানেক্টেড নেই! আগে QR স্ক্যান করুন।' });
-  }
-
   try {
     let { phone, message, images } = req.body;
     if (!phone) return res.status(400).json({ success: false, error: 'ফোন নম্বর দেওয়া হয়নি' });
@@ -97,6 +96,10 @@ app.post('/send-bulk', async (req, res) => {
     else if (!phone.startsWith('880')) phone = '880' + phone;
 
     const jid = `${phone}@s.whatsapp.net`;
+
+    if (!sock) {
+      return res.status(500).json({ success: false, error: 'হোয়াটসঅ্যাপ সকেট ইঞ্জিন ইনিশিয়ালাইজ হয়নি।' });
+    }
 
     // ছবি থাকলে পাঠানো
     if (images && Array.isArray(images) && images.length > 0) {
@@ -115,21 +118,23 @@ app.post('/send-bulk', async (req, res) => {
         }
       }
 
-      // ছবির সাথে সম্পূর্ণ মেসেজ
+      // ছবির পরপরই সম্পূর্ণ বড় মেসেজ
       if (message && message.trim().length > 0) {
         await delay(1500);
         await sock.sendMessage(jid, { text: message });
       }
     } else if (message) {
+      // শুধু টেক্সট মেসেজ
       await sock.sendMessage(jid, { text: message });
     }
 
+    console.log(`✅ Message Sent to: ${phone}`);
     res.json({ success: true, message: `Delivered to ${phone}` });
   } catch (err) {
-    console.error(`Send Failed for ${req.body.phone}:`, err);
-    res.status(500).json({ success: false, error: err.message || 'ডেলিভারি ব্যর্থ হয়েছে' });
+    console.error(`❌ Send Error for ${req.body?.phone}:`, err);
+    res.status(500).json({ success: false, error: err.message || 'মেসেজ ডেলিভারি ব্যর্থ হয়েছে' });
   }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Unlimited WhatsApp Server running on port ${PORT}`));
