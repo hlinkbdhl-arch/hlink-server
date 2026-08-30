@@ -16,7 +16,6 @@ app.get('/status', (req, res) => {
   res.json({ success: true, message: 'Server is Active & Ready!' });
 });
 
-// Green-API ডিভাইস কানেকশন স্ট্যাটাস চেক
 app.get('/check-device', async (req, res) => {
   try {
     const response = await axios.get(`${GREEN_API_URL}/waInstance${ID_INSTANCE}/getStateInstance/${API_TOKEN}`);
@@ -38,7 +37,7 @@ app.post('/send-bulk', async (req, res) => {
     const chatId = `${phone}@c.us`;
     let apiResponses = [];
 
-    // ছবি থাকলে পাঠানো
+    // ১. ছবি থাকলে আগে ছবিগুলো পাঠানো
     if (images && Array.isArray(images) && images.length > 0) {
       for (let i = 0; i < images.length; i++) {
         const base64Data = images[i].base64 || images[i];
@@ -48,39 +47,47 @@ app.post('/send-bulk', async (req, res) => {
         const form = new FormData();
         form.append('chatId', chatId);
         form.append('file', buffer, { 
-          filename: images[i].name || `image_${i+1}.jpg`,
+          filename: images[i].name || `product_${i+1}.jpg`,
           contentType: 'image/jpeg'
         });
 
-        if (i === 0 && message) {
-          form.append('caption', message);
-        }
-
-        const greenRes = await axios.post(`${GREEN_API_URL}/waInstance${ID_INSTANCE}/sendFileByUpload/${API_TOKEN}`, form, {
+        const imgRes = await axios.post(`${GREEN_API_URL}/waInstance${ID_INSTANCE}/sendFileByUpload/${API_TOKEN}`, form, {
           headers: form.getHeaders(),
           timeout: 45000
         });
 
-        apiResponses.push(greenRes.data);
+        apiResponses.push(imgRes.data);
 
+        // একাধিক ছবির মধ্যে সেফ বিরতি
         if (i < images.length - 1) {
-          await new Promise(r => setTimeout(r, 2000));
+          await new Promise(r => setTimeout(r, 1500));
         }
       }
+
+      // ছবির পরপরই সম্পূর্ণ বড় মেসেজটি পাঠানো
+      if (message && message.trim().length > 0) {
+        await new Promise(r => setTimeout(r, 1000));
+        const textRes = await axios.post(`${GREEN_API_URL}/waInstance${ID_INSTANCE}/sendMessage/${API_TOKEN}`, {
+          chatId: chatId,
+          message: message
+        }, { timeout: 20000 });
+
+        apiResponses.push(textRes.data);
+      }
     } else if (message) {
-      // শুধু টেক্সট পাঠানো
-      const greenRes = await axios.post(`${GREEN_API_URL}/waInstance${ID_INSTANCE}/sendMessage/${API_TOKEN}`, {
+      // শুধু টেক্সট থাকলে সরাসরি পাঠানো
+      const textRes = await axios.post(`${GREEN_API_URL}/waInstance${ID_INSTANCE}/sendMessage/${API_TOKEN}`, {
         chatId: chatId,
         message: message
       }, { timeout: 20000 });
 
-      apiResponses.push(greenRes.data);
+      apiResponses.push(textRes.data);
     }
 
     res.json({ success: true, phone: phone, apiData: apiResponses });
   } catch (err) {
     const errorDetails = err.response ? err.response.data : err.message;
-    console.error('Green-API Reject Error:', errorDetails);
+    console.error('Send Error:', errorDetails);
     res.status(500).json({ success: false, error: errorDetails });
   }
 });
